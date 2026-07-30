@@ -62,11 +62,11 @@ async function postJob(data){
     }
 }
 
-app.post('/jobs', async(req, res) => {
+app.post('/jobs', verifyJWT, async(req, res) => {
     try{
-        // if(req.user.role !== "Recruiter"){
-        //     return res.status(403).json({message: "Only recuriters can post jobs."})
-        // }
+        if(req.user.role !== "Recruiter"){
+            return res.status(403).json({message: "Only recruiter can post jobs."})
+        }
 
         const newJob = await postJob(req.body)
         if(newJob){
@@ -118,12 +118,12 @@ async function updateJob(id, dataToUpdate){
     }
 }
 
-app.put('/jobs/:id', async(req, res) => {
+app.put('/jobs/:id', verifyJWT, async(req, res) => {
     try{
 
-        // if(req.user.role !== "Recruiter"){
-        //     return res.status(403).json({message: "Only Recruiter can update job."})
-        // }
+        if(req.user.role !== "Recruiter"){
+            return res.status(403).json({message: "Only Recruiter can update job."})
+        }
 
         const updatedJob = await updateJob(req.params.id, req.body)
         if(updatedJob){
@@ -210,6 +210,101 @@ app.post('/login', async(req, res) => {
         return res.status(500).json({message: "Error while login", error: error.message})
     }
 
+})
+
+//applicant profile - only applicant
+
+async function getApplicantProfile(userId){
+    try{
+        const profile = await Applicant.findOne({user: userId}).populate('user', 'fullName email')
+        return profile
+    }catch(error){
+        throw error
+    }
+}
+
+app.get('/applicant/profile', verifyJWT, async(req, res) => {
+    try{
+        if(req.user.role !== "Applicant"){
+            return res.status(403).json({message: "Only applicants can view profile."})
+        }
+
+        const profile = await getApplicantProfile(req.user.id)
+        if(profile){
+            return res.status(200).json(profile)
+        } else {
+            return res.status(404).json({message: "Profile not found."})
+        }
+
+    }catch(error){
+        return res.status(500).json({message: "Failed to fetch profile", error: error.message})
+    }
+})
+
+async function createApplicantProfile(userId, data){
+    try{
+        const profile = new Applicant({
+            user: userId,
+            ...data
+        })
+        return await profile.save()
+    }catch(error){
+        throw error
+    }
+}
+
+app.post('/applicant/profile', verifyJWT, async(req, res) => {
+    try{
+        if(req.user.role !== "Applicant"){
+            return res.status(403).json({message: "Only applicants can create profile."})
+        }
+
+        const existingProfile = await Applicant.findOne({user: req.user.id})
+        if(existingProfile){
+            return res.status(400).json({message: "Profile already exists. Use update instead."})
+        }
+
+        const {profilePhoto, resume, skills, education} = req.body
+        const newProfile = await createApplicantProfile(req.user.id, {profilePhoto, resume, skills, education})
+
+        return res.status(201).json({message: "Profile created successfully", profile: newProfile})
+
+    }catch(error){
+        return res.status(500).json({message: "Failed to create profile", error: error.message})
+    }
+})
+
+async function updateApplicantProfile(userId, dataToUpdate){
+    try{
+        const profile = await Applicant.findOneAndUpdate(
+            {user: userId},
+            dataToUpdate,
+            {new: true, runValidators: true}
+        )
+        return profile
+    }catch(error){
+        throw error
+    }
+}
+
+app.put('/applicant/profile', verifyJWT, async(req, res) => {
+    try{
+        if(req.user.role !== "Applicant"){
+            return res.status(403).json({message: "Only applicants can update profile."})
+        }
+
+        const {profilePhoto, resume, skills, education} = req.body
+        const updatedProfile = await updateApplicantProfile(req.user.id, {profilePhoto, resume, skills, education})
+
+        if(updatedProfile){
+            return res.status(200).json({message: "Profile updated successfully", profile: updatedProfile})
+        } else {
+            return res.status(404).json({message: "Profile not found. Create profile first."})
+        }
+
+    }catch(error){
+        return res.status(500).json({message: "Failed to update profile", error: error.message})
+    }
 })
 
 const PORT = process.env.PORT || 3000

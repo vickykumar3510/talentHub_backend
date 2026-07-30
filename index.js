@@ -64,9 +64,9 @@ async function postJob(data){
 
 app.post('/jobs', async(req, res) => {
     try{
-        if(req.user.role !== "Recruiter"){
-            return res.status(403).json({message: "Only recuriters can post jobs."})
-        }
+        // if(req.user.role !== "Recruiter"){
+        //     return res.status(403).json({message: "Only recuriters can post jobs."})
+        // }
 
         const newJob = await postJob(req.body)
         if(newJob){
@@ -121,9 +121,9 @@ async function updateJob(id, dataToUpdate){
 app.put('/jobs/:id', async(req, res) => {
     try{
 
-        if(req.user.role !== "Recruiter"){
-            return res.status(403).json({message: "Only Recruiter can update job."})
-        }
+        // if(req.user.role !== "Recruiter"){
+        //     return res.status(403).json({message: "Only Recruiter can update job."})
+        // }
 
         const updatedJob = await updateJob(req.params.id, req.body)
         if(updatedJob){

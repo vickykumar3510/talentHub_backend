@@ -17,7 +17,7 @@ const applicantSchema = new mongoose.Schema({
         type:[String]
     },
     education: {
-        type: [String],
+        type: String,
         enum: ["Undergraduate", "Postgraduate"]
     }
 },{

@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken')
 const bcrypt = require('bcryptjs')
 require('dotenv').config()
 
+const aiRoutes = require('./routes/ai.routes')
 const cors = require('cors')
 const PostJob = require('./models/postJob.model')
 const User = require('./models/user.model')
@@ -306,6 +307,15 @@ app.put('/applicant/profile', verifyJWT, async(req, res) => {
         return res.status(500).json({message: "Failed to update profile", error: error.message})
     }
 })
+
+//ai
+
+app.use("/api/ai", aiRoutes)
+
+//404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {

@@ -48,6 +48,15 @@ const postJobSchema = new mongoose.Schema({
     companyReview: {
         type: String
     },
+    postedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+    },
+    status: {
+        type: String,
+        enum: ["Active", "Archived"],
+        default: "Active"
+    }
 },{
     timestamps: true
 })

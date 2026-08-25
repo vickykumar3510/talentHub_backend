@@ -40,6 +40,42 @@ async function generateInterviewMaterial(prompt) {
     return response.choices[0].message.content
 }
 
+async function generateHiringMaterial(prompt) {
+
+    const response = await client.chat.completions.create({
+        model: "openrouter/free",
+
+        messages: [
+            {
+                role: "system",
+                content: `
+                You are an expert hiring assistant for recruiters. Help screen candidates and plan hiring.
+
+                Return ONLY valid JSON.
+
+                Do not return markdown.
+                Do not add explanations.
+                Do not wrap the JSON in triple backticks.
+
+                Use this exact schema:
+                {
+                    "screeningQuestions": [],
+                    "whatToLookFor": [],
+                    "hiringTips": []
+                }
+                `
+            },
+            {
+                role: "user",
+                content: prompt
+            }
+        ]
+    })
+
+    return response.choices[0].message.content
+}
+
 module.exports = {
-    generateInterviewMaterial
+    generateInterviewMaterial,
+    generateHiringMaterial
 }

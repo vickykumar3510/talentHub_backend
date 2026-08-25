@@ -8,6 +8,7 @@ const cors = require('cors')
 const PostJob = require('./models/postJob.model')
 const User = require('./models/user.model')
 const Applicant = require('./models/applicant.model')
+const Application = require('./models/application.model')
 const {connectDB} = require('./db/db.connect')
 
 
@@ -69,7 +70,11 @@ app.post('/jobs', verifyJWT, async(req, res) => {
             return res.status(403).json({message: "Only recruiter can post jobs."})
         }
 
-        const newJob = await postJob(req.body)
+        const newJob = await postJob({
+            ...req.body,
+            postedBy: req.user.id,
+            status: "Active"
+        })
         if(newJob){
             return res.status(201).json({message: "New Job added", job: newJob})
         } else {
@@ -85,7 +90,7 @@ app.post('/jobs', verifyJWT, async(req, res) => {
 
 async function getJobs(){
     try{
-        const job = await PostJob.find()
+        const job = await PostJob.find({ status: { $ne: "Archived" } })
         return job
 
     }catch(error){
@@ -126,7 +131,19 @@ app.put('/jobs/:id', verifyJWT, async(req, res) => {
             return res.status(403).json({message: "Only Recruiter can update job."})
         }
 
-        const updatedJob = await updateJob(req.params.id, req.body)
+        const job = await PostJob.findById(req.params.id)
+        if(!job){
+            return res.status(404).json({message: "Job not found."})
+        }
+        if(job.postedBy && String(job.postedBy) !== req.user.id){
+            return res.status(403).json({message: "You can only update your own jobs."})
+        }
+
+        const dataToUpdate = { ...req.body }
+        delete dataToUpdate.postedBy
+        delete dataToUpdate.status
+
+        const updatedJob = await updateJob(req.params.id, dataToUpdate)
         if(updatedJob){
             return res.status(200).json({message: "Job updated", job: updatedJob})
         } else {
@@ -194,7 +211,15 @@ async function loginUser(email, password){
         }
 
         const token = jwt.sign({id: user._id, role: user.role}, JWT_SECRET, {expiresIn: "24h"})
-        return token
+        return {
+            token,
+            user: {
+                id: user._id,
+                fullName: user.fullName,
+                email: user.email,
+                role: user.role
+            }
+        }
 
     }catch(error){
         throw error
@@ -204,13 +229,37 @@ async function loginUser(email, password){
 app.post('/login', async(req, res) => {
     try{
         const {email, password} = req.body
-        const token = await loginUser(email, password)
-        return res.status(200).json({message: "Login successfully", token})
+        const result = await loginUser(email, password)
+        return res.status(200).json({message: "Login successfully", token: result.token, user: result.user})
 
     }catch(error){
         return res.status(500).json({message: "Error while login", error: error.message})
     }
 
+})
+
+//get all users
+
+async function getUsers(){
+    try{
+        const users = await User.find().select('-password')
+        return users
+    }catch(error){
+        throw error
+    }
+}
+
+app.get('/users', async(req, res) => {
+    try{
+        const findUsers = await getUsers()
+        if(findUsers.length !== 0){
+            return res.status(200).json(findUsers)
+        } else {
+            return res.status(404).json({message: "No users found."})
+        }
+    }catch(error){
+        return res.status(500).json({message: "Failed to fetch users", error: error.message})
+    }
 })
 
 //applicant profile - only applicant
@@ -308,9 +357,194 @@ app.put('/applicant/profile', verifyJWT, async(req, res) => {
     }
 })
 
+//recruiter jobs
+
+app.get('/recruiter/jobs', verifyJWT, async(req, res) => {
+    try{
+        if(req.user.role !== "Recruiter"){
+            return res.status(403).json({message: "Only recruiter can view posted jobs."})
+        }
+
+        const jobs = await PostJob.find({ postedBy: req.user.id })
+        return res.status(200).json(jobs)
+    }catch(error){
+        return res.status(500).json({message: "Failed to fetch recruiter jobs", error: error.message})
+    }
+})
+
+//archive job - only recruiter
+
+app.put('/jobs/:id/archive', verifyJWT, async(req, res) => {
+    try{
+        if(req.user.role !== "Recruiter"){
+            return res.status(403).json({message: "Only recruiter can archive jobs."})
+        }
+
+        const job = await PostJob.findById(req.params.id)
+        if(!job){
+            return res.status(404).json({message: "Job not found."})
+        }
+        if(job.postedBy && String(job.postedBy) !== req.user.id){
+            return res.status(403).json({message: "You can only archive your own jobs."})
+        }
+
+        job.status = "Archived"
+        await job.save()
+        return res.status(200).json({message: "Job archived", job})
+    }catch(error){
+        return res.status(500).json({message: "Failed to archive job", error: error.message})
+    }
+})
+
+//apply job - only applicant
+
+app.post('/jobs/:id/apply', verifyJWT, async(req, res) => {
+    try{
+        if(req.user.role !== "Applicant"){
+            return res.status(403).json({message: "Recruiters cannot apply for jobs."})
+        }
+
+        const job = await PostJob.findById(req.params.id)
+        if(!job || job.status === "Archived"){
+            return res.status(404).json({message: "Job not found."})
+        }
+
+        const existing = await Application.findOne({ job: req.params.id, applicant: req.user.id })
+        if(existing && existing.status !== "Withdrawn"){
+            return res.status(400).json({message: "Already applied for this job."})
+        }
+
+        if(existing && existing.status === "Withdrawn"){
+            existing.status = "Applied"
+            await existing.save()
+            return res.status(200).json({message: "Application submitted", application: existing})
+        }
+
+        const application = new Application({
+            job: req.params.id,
+            applicant: req.user.id,
+            status: "Applied"
+        })
+        await application.save()
+        return res.status(201).json({message: "Application submitted", application})
+    }catch(error){
+        return res.status(500).json({message: "Failed to apply", error: error.message})
+    }
+})
+
+//my applications - only applicant
+
+app.get('/applications/mine', verifyJWT, async(req, res) => {
+    try{
+        if(req.user.role !== "Applicant"){
+            return res.status(403).json({message: "Only applicants can view applications."})
+        }
+
+        const applications = await Application.find({ applicant: req.user.id }).populate('job')
+        return res.status(200).json(applications)
+    }catch(error){
+        return res.status(500).json({message: "Failed to fetch applications", error: error.message})
+    }
+})
+
+//withdraw application - only applicant
+
+app.put('/applications/:id/withdraw', verifyJWT, async(req, res) => {
+    try{
+        if(req.user.role !== "Applicant"){
+            return res.status(403).json({message: "Only applicants can withdraw applications."})
+        }
+
+        const application = await Application.findById(req.params.id)
+        if(!application){
+            return res.status(404).json({message: "Application not found."})
+        }
+        if(String(application.applicant) !== req.user.id){
+            return res.status(403).json({message: "You can only withdraw your own application."})
+        }
+
+        application.status = "Withdrawn"
+        await application.save()
+        return res.status(200).json({message: "Application withdrawn", application})
+    }catch(error){
+        return res.status(500).json({message: "Failed to withdraw application", error: error.message})
+    }
+})
+
+//view applicants - only recruiter
+
+app.get('/jobs/:id/applicants', verifyJWT, async(req, res) => {
+    try{
+        if(req.user.role !== "Recruiter"){
+            return res.status(403).json({message: "Only recruiter can view applicants."})
+        }
+
+        const job = await PostJob.findById(req.params.id)
+        if(!job){
+            return res.status(404).json({message: "Job not found."})
+        }
+        if(job.postedBy && String(job.postedBy) !== req.user.id){
+            return res.status(403).json({message: "You can only view applicants for your own jobs."})
+        }
+
+        const applicants = await Application.find({
+            job: req.params.id,
+            status: { $ne: "Withdrawn" }
+        }).populate('applicant', 'fullName email')
+
+        return res.status(200).json(applicants)
+    }catch(error){
+        return res.status(500).json({message: "Failed to fetch applicants", error: error.message})
+    }
+})
+
+app.get('/jobs/:id', async(req, res) => {
+    try{
+        const job = await PostJob.findById(req.params.id)
+        if(job){
+            return res.status(200).json(job)
+        } else {
+            return res.status(404).json({message: "Job not found."})
+        }
+    }catch(error){
+        return res.status(500).json({message: "Failed to fetch job", error: error.message})
+    }
+})
+
+//shortlist or reject - only recruiter
+
+app.put('/applications/:id/status', verifyJWT, async(req, res) => {
+    try{
+        if(req.user.role !== "Recruiter"){
+            return res.status(403).json({message: "Only recruiter can update applicant status."})
+        }
+
+        const { status } = req.body
+        if(status !== "Shortlisted" && status !== "Rejected"){
+            return res.status(400).json({message: "Status must be Shortlisted or Rejected."})
+        }
+
+        const application = await Application.findById(req.params.id)
+        if(!application){
+            return res.status(404).json({message: "Application not found."})
+        }
+
+        const job = await PostJob.findById(application.job)
+        if(job.postedBy && String(job.postedBy) !== req.user.id){
+            return res.status(403).json({message: "You can only update applicants for your own jobs."})
+        }
+
+        application.status = status
+        await application.save()
+        return res.status(200).json({message: "Applicant status updated", application})
+    }catch(error){
+        return res.status(500).json({message: "Failed to update applicant status", error: error.message})
+    }
+})
+
 //ai
 
-app.use("/api/ai", aiRoutes)
+app.use("/api/ai", verifyJWT, aiRoutes)
 
 //404 handler
 app.use((req, res) => {

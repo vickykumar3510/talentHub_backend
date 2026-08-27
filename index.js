@@ -568,6 +568,32 @@ app.get('/recruiter/jobs', verifyJWT, async(req, res) => {
     }
 })
 
+app.get('/recruiter/dashboard', verifyJWT, async(req, res) => {
+    try{
+        if(req.user.role !== "Recruiter"){
+            return res.status(403).json({message: "Only recruiter can view dashboard."})
+        }
+
+        const jobs = await PostJob.find({ postedBy: req.user.id }).select('_id status')
+        const activeJobs = jobs.filter((job) => job.status !== "Archived").length
+        const archivedJobs = jobs.filter((job) => job.status === "Archived").length
+        const jobIds = jobs.map((job) => job._id)
+
+        const applications = await Application.find({ job: { $in: jobIds } }).select('status')
+        const totalApplications = applications.length
+        const totalShortlisted = applications.filter((item) => item.status === "Shortlisted").length
+
+        return res.status(200).json({
+            activeJobs,
+            archivedJobs,
+            totalApplications,
+            totalShortlisted
+        })
+    }catch(error){
+        return res.status(500).json({message: "Failed to fetch dashboard", error: error.message})
+    }
+})
+
 //archive job - only recruiter
 
 app.put('/jobs/:id/archive', verifyJWT, async(req, res) => {

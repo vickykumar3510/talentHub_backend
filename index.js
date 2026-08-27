@@ -9,6 +9,7 @@ const cors = require('cors')
 const PostJob = require('./models/postJob.model')
 const User = require('./models/user.model')
 const Applicant = require('./models/applicant.model')
+const Recruiter = require('./models/recruiter.model')
 const Application = require('./models/application.model')
 const {connectDB} = require('./db/db.connect')
 
@@ -117,6 +118,46 @@ function getProfilePayload(req) {
     }
     if (resumeFile) {
         payload.resume = fileToDataUrl(resumeFile)
+    }
+    return payload
+}
+
+const recruiterUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 2 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (file.fieldname === 'companyLogo' && !file.mimetype.startsWith('image/')) {
+            return cb(new Error('Company logo must be an image'))
+        }
+        cb(null, true)
+    }
+}).fields([
+    { name: 'companyLogo', maxCount: 1 }
+])
+
+function handleRecruiterUpload(req, res, next) {
+    recruiterUpload(req, res, (err) => {
+        if (err) {
+            return res.status(400).json({ message: err.message })
+        }
+        next()
+    })
+}
+
+function getRecruiterProfilePayload(req) {
+    const payload = {}
+    if (req.body.companyName !== undefined) {
+        payload.companyName = req.body.companyName
+    }
+    if (req.body.website !== undefined) {
+        payload.website = req.body.website
+    }
+    if (req.body.aboutCompany !== undefined) {
+        payload.aboutCompany = req.body.aboutCompany
+    }
+    const logoFile = req.files?.companyLogo?.[0]
+    if (logoFile) {
+        payload.companyLogo = fileToDataUrl(logoFile)
     }
     return payload
 }
@@ -417,6 +458,95 @@ app.put('/applicant/profile', verifyJWT, handleProfileUpload, async(req, res) =>
         } else {
             return res.status(404).json({message: "Profile not found. Create profile first."})
         }
+
+    }catch(error){
+        return res.status(500).json({message: "Failed to update profile", error: error.message})
+    }
+})
+
+//recruiter profile - only recruiter
+
+async function getRecruiterProfile(userId){
+    try{
+        const profile = await Recruiter.findOne({user: userId}).populate('user', 'fullName email')
+        return profile
+    }catch(error){
+        throw error
+    }
+}
+
+app.get('/recruiter/profile', verifyJWT, async(req, res) => {
+    try{
+        if(req.user.role !== "Recruiter"){
+            return res.status(403).json({message: "Only recruiters can view profile."})
+        }
+
+        const profile = await getRecruiterProfile(req.user.id)
+        if(profile){
+            return res.status(200).json(profile)
+        } else {
+            return res.status(404).json({message: "Profile not found."})
+        }
+
+    }catch(error){
+        return res.status(500).json({message: "Failed to fetch profile", error: error.message})
+    }
+})
+
+async function createRecruiterProfile(userId, data){
+    try{
+        const profile = new Recruiter({
+            user: userId,
+            ...data
+        })
+        return await profile.save()
+    }catch(error){
+        throw error
+    }
+}
+
+app.post('/recruiter/profile', verifyJWT, handleRecruiterUpload, async(req, res) => {
+    try{
+        if(req.user.role !== "Recruiter"){
+            return res.status(403).json({message: "Only recruiters can create profile."})
+        }
+
+        const existingProfile = await Recruiter.findOne({user: req.user.id})
+        if(existingProfile){
+            return res.status(400).json({message: "Profile already exists. Use update instead."})
+        }
+
+        const newProfile = await createRecruiterProfile(req.user.id, getRecruiterProfilePayload(req))
+
+        return res.status(201).json({message: "Profile created successfully", profile: newProfile})
+
+    }catch(error){
+        return res.status(500).json({message: "Failed to create profile", error: error.message})
+    }
+})
+
+async function updateRecruiterProfile(userId, dataToUpdate){
+    try{
+        const profile = await Recruiter.findOneAndUpdate(
+            {user: userId},
+            { user: userId, ...dataToUpdate },
+            {new: true, runValidators: true, upsert: true, setDefaultsOnInsert: true}
+        )
+        return await Recruiter.findById(profile._id).populate('user', 'fullName email')
+    }catch(error){
+        throw error
+    }
+}
+
+app.put('/recruiter/profile', verifyJWT, handleRecruiterUpload, async(req, res) => {
+    try{
+        if(req.user.role !== "Recruiter"){
+            return res.status(403).json({message: "Only recruiters can update profile."})
+        }
+
+        const updatedProfile = await updateRecruiterProfile(req.user.id, getRecruiterProfilePayload(req))
+
+        return res.status(200).json({message: "Profile updated successfully", profile: updatedProfile})
 
     }catch(error){
         return res.status(500).json({message: "Failed to update profile", error: error.message})

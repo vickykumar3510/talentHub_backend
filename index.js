@@ -1,6 +1,7 @@
 const express = require('express')
 const jwt = require('jsonwebtoken')
 const bcrypt = require('bcryptjs')
+const multer = require('multer')
 require('dotenv').config()
 
 const aiRoutes = require('./routes/ai.routes')
@@ -51,6 +52,73 @@ async function verifyJWT(req, res, next){
         return res.status(401).json({message: "Invalid token"})
     }
     
+}
+
+const profileUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 2 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (file.fieldname === 'profilePhoto' && !file.mimetype.startsWith('image/')) {
+            return cb(new Error('Profile photo must be an image'))
+        }
+        if (file.fieldname === 'resume' && file.mimetype !== 'application/pdf') {
+            return cb(new Error('Resume must be a PDF'))
+        }
+        cb(null, true)
+    }
+}).fields([
+    { name: 'profilePhoto', maxCount: 1 },
+    { name: 'resume', maxCount: 1 }
+])
+
+function handleProfileUpload(req, res, next) {
+    profileUpload(req, res, (err) => {
+        if (err) {
+            return res.status(400).json({ message: err.message })
+        }
+        next()
+    })
+}
+
+function fileToDataUrl(file) {
+    return `data:${file.mimetype};base64,${file.buffer.toString('base64')}`
+}
+
+function parseSkills(skills) {
+    if (Array.isArray(skills)) {
+        return skills
+    }
+    if (typeof skills !== 'string' || !skills.trim()) {
+        return []
+    }
+    try {
+        const parsed = JSON.parse(skills)
+        if (Array.isArray(parsed)) {
+            return parsed
+        }
+    } catch {
+        // comma-separated list from FormData
+    }
+    return skills.split(',').map((skill) => skill.trim()).filter(Boolean)
+}
+
+function getProfilePayload(req) {
+    const payload = {}
+    if (req.body.skills !== undefined) {
+        payload.skills = parseSkills(req.body.skills)
+    }
+    if (req.body.education !== undefined) {
+        payload.education = req.body.education
+    }
+    const photoFile = req.files?.profilePhoto?.[0]
+    const resumeFile = req.files?.resume?.[0]
+    if (photoFile) {
+        payload.profilePhoto = fileToDataUrl(photoFile)
+    }
+    if (resumeFile) {
+        payload.resume = fileToDataUrl(resumeFile)
+    }
+    return payload
 }
 
 //post job - only recuriter
@@ -303,7 +371,7 @@ async function createApplicantProfile(userId, data){
     }
 }
 
-app.post('/applicant/profile', verifyJWT, async(req, res) => {
+app.post('/applicant/profile', verifyJWT, handleProfileUpload, async(req, res) => {
     try{
         if(req.user.role !== "Applicant"){
             return res.status(403).json({message: "Only applicants can create profile."})
@@ -314,8 +382,7 @@ app.post('/applicant/profile', verifyJWT, async(req, res) => {
             return res.status(400).json({message: "Profile already exists. Use update instead."})
         }
 
-        const {profilePhoto, resume, skills, education} = req.body
-        const newProfile = await createApplicantProfile(req.user.id, {profilePhoto, resume, skills, education})
+        const newProfile = await createApplicantProfile(req.user.id, getProfilePayload(req))
 
         return res.status(201).json({message: "Profile created successfully", profile: newProfile})
 
@@ -337,14 +404,13 @@ async function updateApplicantProfile(userId, dataToUpdate){
     }
 }
 
-app.put('/applicant/profile', verifyJWT, async(req, res) => {
+app.put('/applicant/profile', verifyJWT, handleProfileUpload, async(req, res) => {
     try{
         if(req.user.role !== "Applicant"){
             return res.status(403).json({message: "Only applicants can update profile."})
         }
 
-        const {profilePhoto, resume, skills, education} = req.body
-        const updatedProfile = await updateApplicantProfile(req.user.id, {profilePhoto, resume, skills, education})
+        const updatedProfile = await updateApplicantProfile(req.user.id, getProfilePayload(req))
 
         if(updatedProfile){
             return res.status(200).json({message: "Profile updated successfully", profile: updatedProfile})

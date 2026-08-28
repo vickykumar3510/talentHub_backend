@@ -75,7 +75,44 @@ async function generateHiringMaterial(prompt) {
     return response.choices[0].message.content
 }
 
+async function generateApplicantInsights(question, applicants) {
+    const response = await client.chat.completions.create({
+        model: "openrouter/free",
+
+        messages: [
+            {
+                role: "system",
+                content: `
+                You are an expert hiring assistant. Answer ONLY using the applicant data provided.
+                Do not invent applicants. If data is missing, say so.
+
+                Return ONLY valid JSON.
+                Do not return markdown.
+                Do not add explanations.
+                Do not wrap the JSON in triple backticks.
+
+                Use this exact schema:
+                {
+                    "answer": "",
+                    "topCandidates": []
+                }
+
+                topCandidates should be an array of strings like "Name - reason".
+                If the question does not need a ranking, return an empty topCandidates array.
+                `
+            },
+            {
+                role: "user",
+                content: `Applicants:\n${JSON.stringify(applicants, null, 2)}\n\nQuestion: ${question}`
+            }
+        ]
+    })
+
+    return response.choices[0].message.content
+}
+
 module.exports = {
     generateInterviewMaterial,
-    generateHiringMaterial
+    generateHiringMaterial,
+    generateApplicantInsights
 }

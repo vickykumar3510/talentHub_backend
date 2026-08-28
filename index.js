@@ -583,11 +583,21 @@ app.get('/recruiter/dashboard', verifyJWT, async(req, res) => {
         const totalApplications = applications.length
         const totalShortlisted = applications.filter((item) => item.status === "Shortlisted").length
 
+        const recentApplicants = await Application.find({
+            job: { $in: jobIds },
+            status: { $ne: "Withdrawn" }
+        })
+            .sort({ createdAt: -1 })
+            .limit(5)
+            .populate('applicant', 'fullName email')
+            .populate('job', 'jobTitle')
+
         return res.status(200).json({
             activeJobs,
             archivedJobs,
             totalApplications,
-            totalShortlisted
+            totalShortlisted,
+            recentApplicants
         })
     }catch(error){
         return res.status(500).json({message: "Failed to fetch dashboard", error: error.message})
@@ -717,6 +727,32 @@ app.get('/jobs/:id/applicants', verifyJWT, async(req, res) => {
         return res.status(200).json(applicants)
     }catch(error){
         return res.status(500).json({message: "Failed to fetch applicants", error: error.message})
+    }
+})
+
+app.get('/jobs/:id/similar', async(req, res) => {
+    try{
+        const job = await PostJob.findById(req.params.id)
+        if(!job){
+            return res.status(404).json({message: "Job not found."})
+        }
+
+        const similarJobs = await PostJob.find({
+            _id: { $ne: job._id },
+            status: { $ne: "Archived" },
+            $or: [
+                { location: job.location },
+                { jobType: job.jobType },
+                { employmentType: job.employmentType },
+                { requiredSkills: { $in: job.requiredSkills || [] } }
+            ]
+        })
+            .sort({ createdAt: -1 })
+            .limit(5)
+
+        return res.status(200).json(similarJobs)
+    }catch(error){
+        return res.status(500).json({message: "Failed to fetch similar jobs", error: error.message})
     }
 })
 

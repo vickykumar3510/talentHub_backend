@@ -210,12 +210,7 @@ async function getJobs(){
 app.get('/jobs', async(req, res) => {
     try{
         const findJobs = await getJobs()
-        if(findJobs.length !== 0){
-            return res.status(200).json(findJobs)
-        } else {
-            return res.status(404).json({message: "No jobs found."})
-        }
-        
+        return res.status(200).json(findJobs)
     }catch(error){
         return res.status(500).json({message: "Failed to fetch jobs data", error: error.message})
     }

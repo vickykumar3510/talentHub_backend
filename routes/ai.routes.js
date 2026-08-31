@@ -69,7 +69,7 @@ router.post("/talenthub-hiring", async (req, res) => {
       .map((item) => item.applicant?._id)
       .filter(Boolean)
 
-    const profiles = await Applicant.find({ user: { $in: userIds } }).select("user skills education")
+    const profiles = await Applicant.find({ user: { $in: userIds } }).select("user skills education bio experience")
     const profileByUser = {}
     profiles.forEach((profile) => {
       profileByUser[String(profile.user)] = profile
@@ -84,7 +84,9 @@ router.post("/talenthub-hiring", async (req, res) => {
         jobRequiredSkills: item.job?.requiredSkills || [],
         status: item.status,
         skills: profile?.skills || [],
-        education: profile?.education || "Not provided"
+        education: profile?.education || "Not provided",
+        bio: profile?.bio || "",
+        experience: profile?.experience || ""
       }
     })
 

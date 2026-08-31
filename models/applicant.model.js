@@ -10,6 +10,12 @@ const applicantSchema = new mongoose.Schema({
     profilePhoto: {
         type: String
     },
+    bio: {
+        type: String
+    },
+    experience: {
+        type: String
+    },
     resume: {
         type: String
     },

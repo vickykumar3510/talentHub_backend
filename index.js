@@ -111,6 +111,12 @@ function getProfilePayload(req) {
     if (req.body.education !== undefined) {
         payload.education = req.body.education
     }
+    if (req.body.bio !== undefined) {
+        payload.bio = req.body.bio
+    }
+    if (req.body.experience !== undefined) {
+        payload.experience = req.body.experience
+    }
     const photoFile = req.files?.profilePhoto?.[0]
     const resumeFile = req.files?.resume?.[0]
     if (photoFile) {
@@ -141,6 +147,33 @@ function handleRecruiterUpload(req, res, next) {
             return res.status(400).json({ message: err.message })
         }
         next()
+    })
+}
+
+async function attachApplicantProfiles(applications) {
+    const items = applications.map((item) => item.toObject ? item.toObject() : item)
+    const userIds = items
+        .map((item) => item.applicant?._id || item.applicant)
+        .filter(Boolean)
+
+    const profiles = await Applicant.find({ user: { $in: userIds } })
+        .select("user resume skills experience")
+
+    const profileByUser = {}
+    profiles.forEach((profile) => {
+        profileByUser[String(profile.user)] = profile
+    })
+
+    return items.map((item) => {
+        const userId = item.applicant?._id || item.applicant
+        const profile = profileByUser[String(userId)]
+        return {
+            ...item,
+            resume: profile?.resume || "",
+            skills: profile?.skills || [],
+            experience: profile?.experience || "",
+            appliedAt: item.createdAt
+        }
     })
 }
 
@@ -622,7 +655,7 @@ app.get('/recruiter/dashboard', verifyJWT, async(req, res) => {
             archivedJobs,
             totalApplications,
             totalShortlisted,
-            recentApplicants
+            recentApplicants: await attachApplicantProfiles(recentApplicants)
         })
     }catch(error){
         return res.status(500).json({message: "Failed to fetch dashboard", error: error.message})
@@ -753,7 +786,7 @@ app.get('/jobs/:id/applicants', verifyJWT, async(req, res) => {
             status: { $ne: "Withdrawn" }
         }).populate('applicant', 'fullName email')
 
-        return res.status(200).json(applicants)
+        return res.status(200).json(await attachApplicantProfiles(applicants))
     }catch(error){
         return res.status(500).json({message: "Failed to fetch applicants", error: error.message})
     }

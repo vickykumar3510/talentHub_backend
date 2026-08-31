@@ -48,6 +48,10 @@ const postJobSchema = new mongoose.Schema({
     companyReview: {
         type: String
     },
+    applicationDeadline: {
+        type: Date,
+        required: true
+    },
     postedBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User"

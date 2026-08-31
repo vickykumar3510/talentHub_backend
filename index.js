@@ -164,6 +164,28 @@ function getRecruiterProfilePayload(req) {
 
 //post job - only recuriter
 
+function startOfToday() {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return today
+}
+
+function isDeadlineInThePast(deadline) {
+    if (!deadline) return true
+    const date = new Date(deadline)
+    if (Number.isNaN(date.getTime())) return true
+    date.setHours(0, 0, 0, 0)
+    return date < startOfToday()
+}
+
+function isApplicationClosed(deadline) {
+    if (!deadline) return false
+    const date = new Date(deadline)
+    if (Number.isNaN(date.getTime())) return false
+    date.setHours(23, 59, 59, 999)
+    return new Date() > date
+}
+
 async function postJob(data){
     try{
         const job = new PostJob(data)
@@ -177,6 +199,10 @@ app.post('/jobs', verifyJWT, async(req, res) => {
     try{
         if(req.user.role !== "Recruiter"){
             return res.status(403).json({message: "Only recruiter can post jobs."})
+        }
+
+        if(isDeadlineInThePast(req.body.applicationDeadline)){
+            return res.status(400).json({message: "Application deadline cannot be in the past."})
         }
 
         const newJob = await postJob({
@@ -246,6 +272,10 @@ app.put('/jobs/:id', verifyJWT, async(req, res) => {
         const dataToUpdate = { ...req.body }
         delete dataToUpdate.postedBy
         delete dataToUpdate.status
+
+        if(isDeadlineInThePast(dataToUpdate.applicationDeadline)){
+            return res.status(400).json({message: "Application deadline cannot be in the past."})
+        }
 
         const updatedJob = await updateJob(req.params.id, dataToUpdate)
         if(updatedJob){
@@ -634,6 +664,10 @@ app.post('/jobs/:id/apply', verifyJWT, async(req, res) => {
         const job = await PostJob.findById(req.params.id)
         if(!job || job.status === "Archived"){
             return res.status(404).json({message: "Job not found."})
+        }
+
+        if(isApplicationClosed(job.applicationDeadline)){
+            return res.status(400).json({message: "Application deadline has passed."})
         }
 
         const existing = await Application.findOne({ job: req.params.id, applicant: req.user.id })

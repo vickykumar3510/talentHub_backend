@@ -124,6 +124,8 @@ function getProfilePayload(req) {
     }
     if (resumeFile) {
         payload.resume = fileToDataUrl(resumeFile)
+    } else if (req.body.removeResume === 'true' || req.body.removeResume === true) {
+        payload.resume = ""
     }
     return payload
 }

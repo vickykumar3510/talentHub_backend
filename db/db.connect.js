@@ -2,11 +2,11 @@ const mongoose = require('mongoose')
 require('dotenv').config()
 
 const mongoUri = process.env.MONGODB
+console.log(!!mongoUri, "mongodb uri exist")
 
 const connectDB = async() => {
     try{
-        await mongoose
-        .connect(mongoUri)
+        await mongoose.connect(mongoUri)
         console.log("Connected to Database")
 
     }catch(error){
